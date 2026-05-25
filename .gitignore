@@ -1,0 +1,14 @@
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Runtime / user data
+tracker.log
+courses.json
+settings.json
+icon.ico

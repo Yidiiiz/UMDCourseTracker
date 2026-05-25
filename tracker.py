@@ -18,6 +18,7 @@ except Exception:
 import datetime
 import json
 import logging
+import os
 import queue
 import sys
 import threading
@@ -44,10 +45,19 @@ from plyer import notification
 # =============================================================================
 # Paths & logging
 # =============================================================================
-BASE_DIR      = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
-COURSES_FILE  = BASE_DIR / "courses.json"
-SETTINGS_FILE = BASE_DIR / "settings.json"
-ICON_FILE     = BASE_DIR / "icon.ico"
+# When frozen (exe): keep user data in %APPDATA%\UMD Course Tracker so
+# nothing is written next to the executable.  When running from source:
+# use the script directory as before.
+if getattr(sys, "frozen", False):
+    DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "UMD Course Tracker"
+else:
+    DATA_DIR = Path(__file__).parent
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+COURSES_FILE  = DATA_DIR / "courses.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
+ICON_FILE     = DATA_DIR / "icon.ico"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,8 +76,8 @@ USER_AGENT       = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-DEFAULT_SETTINGS = {"interval": 60, "notify_on_close": False}
-DEFAULT_COURSES  = [{"courseId": "CMSC351", "termId": "202608", "sectionId": ""}]
+DEFAULT_SETTINGS = {"interval": 60, "notify_on_close": False, "theme": "system"}
+DEFAULT_COURSES: list = []
 
 PANEL_W   = 480   # default panel width (px)
 CARD_H    = 80    # height of one course card (px)
@@ -79,48 +89,102 @@ MIN_H     = 220   # minimum resizable height
 
 
 # =============================================================================
-# Colour palette
+# Theme system
 # =============================================================================
-BG        = "#111111"
-SURFACE   = "#1c1c1c"
-INPUT     = "#212121"
-BORDER    = "#333333"
-ACCENT    = "#2e2e2e"
-ACCENT_H  = "#383838"
-TEXT      = "#ececec"
-SUB       = "#6a6a6a"
-DIVIDER   = "#1f1f1f"
-SUCCESS   = "#22c55e"
-DANGER    = "#ef4444"
-WARN      = "#f59e0b"
-DANGER_SUB = "#686868"   # dark gray for subtle × on card hover
-
-CARD_BG   = SURFACE
-CARD_HOV  = "#212121"
-DOT_BACK  = "#141414"
-
 
 def _blend(fg: str, bg: str, alpha: float) -> str:
     """Alpha-composite fg over bg at the given opacity."""
-    r, g, b   = int(fg[1:3], 16), int(fg[3:5], 16), int(fg[5:7], 16)
+    r,  g,  b   = int(fg[1:3], 16), int(fg[3:5], 16), int(fg[5:7], 16)
     br, bg_, bb = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
     return "#{:02x}{:02x}{:02x}".format(
-        int(r * alpha + br * (1 - alpha)),
-        int(g * alpha + bg_ * (1 - alpha)),
-        int(b * alpha + bb * (1 - alpha)),
+        int(r  * alpha + br  * (1 - alpha)),
+        int(g  * alpha + bg_ * (1 - alpha)),
+        int(b  * alpha + bb  * (1 - alpha)),
     )
 
 
-# Text-label colours (blended against SURFACE)
-SUCCESS_G = _blend(SUCCESS, SURFACE, 0.68)
-DANGER_G  = _blend(DANGER,  SURFACE, 0.68)
-WARN_G    = _blend(WARN,    SURFACE, 0.68)
-SUB_G     = _blend(SUB,     SURFACE, 0.68)
+_DARK_PALETTE: dict[str, str] = {
+    "BG":          "#111111",
+    "SURFACE":     "#1c1c1c",
+    "INPUT":       "#212121",
+    "BORDER":      "#333333",
+    "ACCENT":      "#2e2e2e",
+    "ACCENT_H":    "#383838",
+    "TEXT":        "#ececec",
+    "SUB":         "#6a6a6a",
+    "PLACEHOLDER": "#383838",
+    "DIVIDER":     "#1f1f1f",
+    "SUCCESS":     "#22c55e",
+    "DANGER":      "#ef4444",
+    "WARN":        "#f59e0b",
+    "DANGER_SUB":  "#686868",
+    "CARD_BG":     "#1c1c1c",
+    "CARD_HOV":    "#212121",
+    "DOT_BACK":    "#141414",
+    "SCROLLTHUMB": "#505050",
+}
 
-# Canvas dot colours — blended at low opacity for a glassy look
-SUCCESS_D = _blend(SUCCESS, DOT_BACK, 0.42)
-DANGER_D  = _blend(DANGER,  DOT_BACK, 0.42)
-WARN_D    = _blend(WARN,    DOT_BACK, 0.42)
+_LIGHT_PALETTE: dict[str, str] = {
+    "BG":          "#f0f0f0",
+    "SURFACE":     "#ffffff",
+    "INPUT":       "#e8e8e8",
+    "BORDER":      "#c0c0c0",
+    "ACCENT":      "#e0e0e0",
+    "ACCENT_H":    "#d0d0d0",
+    "TEXT":        "#1a1a1a",
+    "SUB":         "#888888",
+    "PLACEHOLDER": "#c0c0c0",
+    "DIVIDER":     "#dcdcdc",
+    "SUCCESS":     "#16a34a",
+    "DANGER":      "#dc2626",
+    "WARN":        "#d97706",
+    "DANGER_SUB":  "#aaaaaa",
+    "CARD_BG":     "#ffffff",
+    "CARD_HOV":    "#f5f5f5",
+    "DOT_BACK":    "#e4e4e4",
+    "SCROLLTHUMB": "#aaaaaa",
+}
+
+
+def _system_prefers_dark() -> bool:
+    """Return True when Windows is set to dark mode (or detection fails)."""
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as k:
+            val, _ = winreg.QueryValueEx(k, "AppsUseLightTheme")
+            return val == 0   # 0 → dark,  1 → light
+    except Exception:
+        return True
+
+
+def _effective_theme(setting: str) -> str:
+    """Resolve 'system' / 'dark' / 'light' → 'dark' or 'light'."""
+    if setting == "light":
+        return "light"
+    if setting == "dark":
+        return "dark"
+    return "dark" if _system_prefers_dark() else "light"
+
+
+def apply_theme(name: str) -> None:
+    """Apply a colour palette globally.  name: 'dark' or 'light'."""
+    palette = _DARK_PALETTE if name == "dark" else _LIGHT_PALETTE
+    g = globals()
+    g.update(palette)
+    # Recompute blended derived colours
+    g["SUCCESS_G"] = _blend(g["SUCCESS"], g["SURFACE"],  0.68)
+    g["DANGER_G"]  = _blend(g["DANGER"],  g["SURFACE"],  0.68)
+    g["WARN_G"]    = _blend(g["WARN"],    g["SURFACE"],  0.68)
+    g["SUB_G"]     = _blend(g["SUB"],     g["SURFACE"],  0.68)
+    g["SUCCESS_D"] = _blend(g["SUCCESS"], g["DOT_BACK"], 0.42)
+    g["DANGER_D"]  = _blend(g["DANGER"],  g["DOT_BACK"], 0.42)
+    g["WARN_D"]    = _blend(g["WARN"],    g["DOT_BACK"], 0.42)
+
+
+# Initialise with dark theme; Tracker.run() overrides based on user settings.
+apply_theme("dark")
 
 FONT_SM    = ("Segoe UI", 9)
 FONT_BOLD  = ("Segoe UI Semibold", 10)
@@ -267,13 +331,15 @@ _ICON_RGB = {"green": (34, 197, 94), "red": (239, 68, 68), "yellow": (234, 179, 
 def make_icon_image(color: str, size: int = 64) -> Image.Image:
     """Create a tray icon that mirrors the in-app status dot.
 
-    Draws a dark backing disk and a smaller coloured inner dot — identical
+    Draws a backing disk and a smaller coloured inner dot — identical
     in concept to the dot_canvas widgets used on each course card.
+    The backing colour is taken from the current theme's DOT_BACK.
     """
     rgb  = _ICON_RGB.get(color, _ICON_RGB["yellow"])
-    back = (20, 20, 20)          # DOT_BACK equivalent
+    db   = DOT_BACK.lstrip("#")
+    back = (int(db[0:2], 16), int(db[2:4], 16), int(db[4:6], 16))
 
-    # Blend the dot color at 0.55 opacity over the dark back
+    # Blend the dot colour at 0.55 opacity over the backing
     # (slightly higher than the 0.42 used in-app so it reads on the taskbar)
     dot_r = int(rgb[0] * 0.55 + back[0] * 0.45)
     dot_g = int(rgb[1] * 0.55 + back[1] * 0.45)
@@ -297,7 +363,7 @@ def make_icon_image(color: str, size: int = 64) -> Image.Image:
 
 def save_ico() -> None:
     """Always regenerate the .ico so it stays in sync with the current style."""
-    make_icon_image("yellow", 64).save(
+    make_icon_image("green", 64).save(
         str(ICON_FILE), format="ICO",
         sizes=[(16, 16), (32, 32), (48, 48), (64, 64)],
     )
@@ -471,6 +537,29 @@ def styled_entry(parent: tk.Widget, width: int = 10, font=FONT_MONO) -> tk.Entry
     )
 
 
+def add_placeholder(entry: tk.Entry, text: str) -> None:
+    """Show very subtle hint text that vanishes on focus and returns when empty."""
+    entry._placeholder = text  # type: ignore[attr-defined]
+    entry._has_placeholder = True  # type: ignore[attr-defined]
+    entry.insert(0, text)
+    entry.config(fg=PLACEHOLDER)
+
+    def on_focus_in(_):
+        if entry._has_placeholder:  # type: ignore[attr-defined]
+            entry.delete(0, "end")
+            entry.config(fg=TEXT)
+            entry._has_placeholder = False  # type: ignore[attr-defined]
+
+    def on_focus_out(_):
+        if not entry.get():
+            entry.insert(0, entry._placeholder)  # type: ignore[attr-defined]
+            entry.config(fg=PLACEHOLDER)
+            entry._has_placeholder = True  # type: ignore[attr-defined]
+
+    entry.bind("<FocusIn>",  on_focus_in)
+    entry.bind("<FocusOut>", on_focus_out)
+
+
 def form_label(parent: tk.Widget, text: str) -> tk.Label:
     return tk.Label(parent, text=text, font=FONT_SM, bg=BG, fg=SUB)
 
@@ -534,7 +623,7 @@ class ThinScrollbar:
         self.canvas = tk.Canvas(parent, width=6, height=1, bg=BG,
                                 highlightthickness=0, bd=0)
         self._thumb = self.canvas.create_rectangle(1, 0, 5, 0,
-                                                   fill="#505050", outline="")
+                                                   fill=SCROLLTHUMB, outline="")
         self.canvas.bind("<ButtonPress-1>",   self._on_press)
         self.canvas.bind("<B1-Motion>",       self._on_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
@@ -633,6 +722,7 @@ class Popup:
         # Misc UI state
         self._adv_open = False
         self._quitting = False
+        self._placed   = False   # True after _place_window; gates _resize_height
 
         self._build(root)
 
@@ -640,6 +730,7 @@ class Popup:
     # Layout construction
     # =========================================================================
     def _build(self, root: tk.Tk) -> None:
+        self._root = root          # kept so _reopen_with_new_theme can pass it back
         shell = tk.Toplevel(root)
         self.win = shell
         shell.withdraw()                        # hidden until _place_window positions it
@@ -763,9 +854,11 @@ class Popup:
         form_label(r1, "Course").pack(side="left")
         self._e_course = styled_entry(r1, width=9)
         self._e_course.pack(side="left", padx=(4, 12))
+        add_placeholder(self._e_course, "CMSC351")
         form_label(r1, "Section").pack(side="left")
         self._e_section = styled_entry(r1, width=8)
         self._e_section.pack(side="left", padx=(4, 0))
+        add_placeholder(self._e_section, "0101")
 
         # Row 2 — Semester + Year
         r2 = tk.Frame(body, bg=BG)
@@ -840,6 +933,29 @@ class Popup:
             selectcolor=INPUT, font=FONT_SM, bd=0, highlightthickness=0,
         ).pack(anchor="w", pady=(0, 5))
 
+        # Theme selector
+        row_t = tk.Frame(self._adv_body, bg=BG)
+        row_t.pack(fill="x", pady=(2, 6))
+        form_label(row_t, "Theme").pack(side="left")
+        self._theme_var = tk.StringVar(
+            value=self.tracker.settings.get("theme", "system").capitalize())
+        theme_cb = ttk.Combobox(
+            row_t, textvariable=self._theme_var,
+            values=["System", "Dark", "Light"],
+            state="readonly", width=8, style="Popup.TCombobox", font=FONT_SM,
+        )
+        theme_cb.pack(side="left", padx=(5, 0))
+        theme_cb.bind("<<ComboboxSelected>>", self._save_theme)
+
+        # Subtle "snap to corner" link
+        snap_lbl = tk.Label(self._adv_body, text="move to bottom-right",
+                            font=("Segoe UI", 8), bg=BG, fg=PLACEHOLDER,
+                            cursor="hand2")
+        snap_lbl.pack(anchor="w", pady=(2, 10))
+        snap_lbl.bind("<Enter>",    lambda _: snap_lbl.config(fg=SUB))
+        snap_lbl.bind("<Leave>",    lambda _: snap_lbl.config(fg=PLACEHOLDER))
+        snap_lbl.bind("<Button-1>", lambda _: self._reset_position())
+
     # ── Footer ────────────────────────────────────────────────────────────────
     def _build_footer(self, outer: tk.Frame) -> None:
         foot = tk.Frame(outer, bg=SURFACE, pady=6)
@@ -851,10 +967,21 @@ class Popup:
     # =========================================================================
     # Window placement & sizing
     # =========================================================================
+    @staticmethod
+    def _work_area() -> tuple[int, int, int, int]:
+        """Return (left, top, right, bottom) of the usable desktop (excludes taskbar)."""
+        try:
+            import ctypes.wintypes as wt
+            rect = wt.RECT()
+            ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(rect), 0)
+            return rect.left, rect.top, rect.right, rect.bottom
+        except Exception:
+            return 0, 0, 0, 0
+
     def _place_window(self, shell: tk.Toplevel) -> None:
         """Position and size the window.
 
-        On first open: centre on screen, height fitted to existing courses.
+        On first open: bottom-right corner of the work area (above the taskbar).
         When saved state exists (popup_moved flag): restore width and position.
         Height is always auto-computed from course count (no vertical resize).
         """
@@ -872,19 +999,23 @@ class Popup:
         sw = shell.winfo_screenwidth()
         sh = shell.winfo_screenheight()
 
-        if self.tracker.settings.get("popup_moved"):
-            x = self.tracker.settings.get("popup_x", (sw - W) // 2)
-            y = self.tracker.settings.get("popup_y", (sh - H) // 2)
-            x = max(0, min(x, sw - W))
-            y = max(0, min(y, sh - H))
+        MARGIN = 12
+        _, _, wa_r, wa_b = self._work_area()
+        if wa_r <= 0:                   # fallback if API call failed
+            wa_r, wa_b = sw, sh
+
+        if self.tracker._session_x is not None:
+            x = max(0, min(self.tracker._session_x, sw - W))
+            y = max(0, min(self.tracker._session_bottom - H, sh - H))
         else:
-            x = (sw - W) // 2
-            y = (sh - H) // 2
+            x = wa_r - W - MARGIN
+            y = wa_b - H - MARGIN
 
         shell.geometry(f"{W}x{H}+{x}+{y}")
         shell.update()          # fully paint all widgets before revealing the window
         shell.deiconify()
         shell.lift()
+        self._placed = True
         self._try_round_corners(shell)
         log.info("Popup placed: %dx%d+%d+%d", W, H, x, y)
 
@@ -893,6 +1024,19 @@ class Popup:
         self.win.update_idletasks()
         return self._outer.winfo_reqheight() + 2
 
+    def _resize_height(self, new_h: int) -> None:
+        """Change window height while keeping the bottom edge pinned in place.
+
+        No-op before _place_window has run (window not yet on screen).
+        """
+        if not self._placed:
+            return
+        W     = self.win.winfo_width()
+        x     = self.win.winfo_x()
+        old_h = self.win.winfo_height()
+        y     = self.win.winfo_y() + (old_h - new_h)
+        self.win.geometry(f"{W}x{new_h}+{x}+{y}")
+
     def _fit_to_content(self) -> None:
         """Resize window height to current content without touching canvas height.
 
@@ -900,9 +1044,7 @@ class Popup:
         grows/shrinks — the course canvas area is left completely untouched.
         """
         self.win.update_idletasks()
-        H = self._natural_height()
-        W = self.win.winfo_width()
-        self.win.geometry(f"{W}x{H}+{self.win.winfo_x()}+{self.win.winfo_y()}")
+        self._resize_height(self._natural_height())
         if not self._adv_open:
             self._vis = 0   # reset so _auto_size corrects canvas height if n changed while open
             self._auto_size()
@@ -921,13 +1063,10 @@ class Popup:
         vis      = min(max(n, 1), MAX_VIS)
         if vis == self._vis:
             return
-        self._vis    = vis
-        canvas_h     = vis * per_card
-        self._canvas.config(height=canvas_h)
+        self._vis = vis
+        self._canvas.config(height=vis * per_card)
         self.win.update_idletasks()
-        H = self._natural_height()
-        W = self.win.winfo_width()
-        self.win.geometry(f"{W}x{H}+{self.win.winfo_x()}+{self.win.winfo_y()}")
+        self._resize_height(self._natural_height())
 
     @staticmethod
     def _try_round_corners(shell: tk.Toplevel) -> None:
@@ -990,10 +1129,7 @@ class Popup:
         # wrap's grid-row height, which lets tkinter expand the window.
         if not self._adv_open:
             self.win.update_idletasks()
-            H = self._natural_height()
-            self.win.geometry(
-                f"{self.win.winfo_width()}x{H}"
-                f"+{self.win.winfo_x()}+{self.win.winfo_y()}")
+            self._resize_height(self._natural_height())
 
     def _update_card_statuses(self) -> None:
         """Update status labels/dots in-place (no widget destruction, no flicker).
@@ -1200,8 +1336,8 @@ class Popup:
     # Add course
     # =========================================================================
     def _add_course(self) -> None:
-        cid    = self._e_course.get().strip().upper()
-        sid    = self._e_section.get().strip()
+        cid    = "" if getattr(self._e_course,  "_has_placeholder", False) else self._e_course.get().strip().upper()
+        sid    = "" if getattr(self._e_section, "_has_placeholder", False) else self._e_section.get().strip()
         season = self._season_var.get()
         year   = self._e_year.get().strip()
 
@@ -1223,8 +1359,11 @@ class Popup:
         self.tracker.courses.append(CourseConfig(cid, tid, sid))
         save_courses(self.tracker.courses)
         self.tracker.rebuild_menu()
-        self._e_course.delete(0, "end")
-        self._e_section.delete(0, "end")
+        self.win.focus_set()                         # release entry focus first
+        for entry in (self._e_course, self._e_section):
+            entry.delete(0, "end")
+            entry.event_generate("<FocusOut>")   # restore placeholder
+        self._rebuild_cards()                    # show card immediately
         self.tracker._set_icon_color("yellow")
         log.info("Added %s §%s term=%s", cid, sid, tid)
         threading.Thread(target=self.tracker._poll_once, daemon=True).start()
@@ -1248,6 +1387,7 @@ class Popup:
         save_courses(self.tracker.courses)
         self.tracker.update_tray_icon()
         self.tracker.rebuild_menu()
+        self.win.after(0, self._rebuild_cards)   # defer past the click event, then rebuild
         log.info("Removed course %s", key)
 
     # =========================================================================
@@ -1269,19 +1409,49 @@ class Popup:
     def _save_startup(self) -> None:
         set_startup_enabled(self._startup_var.get())
 
+    def _save_theme(self, _=None) -> None:
+        """Persist the chosen theme, re-apply colours, and reopen the popup."""
+        choice = self._theme_var.get().lower()   # "system", "dark", or "light"
+        self.tracker.settings["theme"] = choice
+        save_settings(self.tracker.settings)
+        apply_theme(_effective_theme(choice))
+        self.tracker._configure_ttk_style()
+        save_ico()                          # regenerate icon file with new theme colours
+        self.tracker.update_tray_icon()     # push the new icon to the system tray live
+        self.win.after(50, self._reopen_with_new_theme)
+
+    def _reopen_with_new_theme(self) -> None:
+        tracker = self.tracker
+        root    = self._root
+        self.close()                      # _save_geometry already saved adv state
+        Popup.toggle(tracker, root)
+        if tracker._session_adv_open and Popup._instance:
+            Popup._instance._toggle_advanced()
+
+    def _reset_position(self) -> None:
+        """Snap the window to the bottom-right of the work area."""
+        MARGIN = 12
+        _, _, wa_r, wa_b = Popup._work_area()
+        if wa_r <= 0:
+            wa_r = self.win.winfo_screenwidth()
+            wa_b = self.win.winfo_screenheight()
+        W = self.win.winfo_width()
+        H = self.win.winfo_height()
+        x = wa_r - W - MARGIN
+        y = wa_b - H - MARGIN
+        self.win.geometry(f"+{x}+{y}")
+        self.tracker._session_x      = x
+        self.tracker._session_bottom = wa_b - MARGIN
+
     # =========================================================================
     # Geometry save / restore
     # =========================================================================
     def _save_geometry(self) -> None:
-        """Save window size, canvas height, and position on every close.
-
-        Position is saved on every close so the popup reopens where it was left.
-        """
+        """Remember window state for this session (not written to disk)."""
         try:
-            self.tracker.settings["popup_moved"] = True
-            self.tracker.settings["popup_x"]     = self.win.winfo_x()
-            self.tracker.settings["popup_y"]     = self.win.winfo_y()
-            save_settings(self.tracker.settings)
+            self.tracker._session_x      = self.win.winfo_x()
+            self.tracker._session_bottom = self.win.winfo_y() + self.win.winfo_height()
+            self.tracker._session_adv_open = self._adv_open
         except Exception:
             pass
 
@@ -1338,6 +1508,18 @@ class Tracker:
         self.cmd_q: queue.Queue = queue.Queue()
         self._icon: Optional[TrayIcon] = None
         self._root: Optional[tk.Tk]    = None
+        # Session-only window state (not persisted; resets to bottom-right on launch)
+        self._session_x:       Optional[int] = None
+        self._session_bottom:  Optional[int] = None   # bottom edge — survives height changes
+        self._session_adv_open: bool         = False
+        # Remove any legacy persisted position keys from settings
+        _changed = False
+        for _k in ("popup_moved", "popup_x", "popup_y"):
+            if _k in self.settings:
+                del self.settings[_k]
+                _changed = True
+        if _changed:
+            save_settings(self.settings)
         save_ico()
 
     # ── Icon colour ───────────────────────────────────────────────────────────
@@ -1476,23 +1658,24 @@ class Tracker:
         if self._root and not self._quitting:
             self._root.after(100, self._pump)
 
-    # ── Run ───────────────────────────────────────────────────────────────────
-    def run(self) -> None:
-        root = tk.Tk()
-        self._root = root
-        root.withdraw()
-        root.protocol("WM_DELETE_WINDOW", lambda: None)
+    # ── TTK style ─────────────────────────────────────────────────────────────
+    def _configure_ttk_style(self) -> None:
+        """Configure the ttk Combobox style to match the current colour theme.
 
-        # Dark combobox styling
-        style = ttk.Style(root)
+        Called once at startup and again whenever the user changes the theme
+        so the dropdown reflects the new palette immediately.
+        """
+        if not self._root:
+            return
+        style = ttk.Style(self._root)
         style.theme_use("clam")
         style.configure("Popup.TCombobox",
                          fieldbackground=INPUT, background=ACCENT,
                          foreground=TEXT, arrowcolor=SUB,
                          selectbackground=INPUT, selectforeground=TEXT,
                          padding=(5, 3),
-                         focuscolor=INPUT,        # suppress focus highlight ring
-                         bordercolor=ACCENT,      # match dark theme border
+                         focuscolor=INPUT,
+                         bordercolor=ACCENT,
                          lightcolor=ACCENT, darkcolor=ACCENT)
         style.map("Popup.TCombobox",
                   fieldbackground=[("readonly", INPUT), ("focus", INPUT)],
@@ -1503,12 +1686,25 @@ class Tracker:
                   bordercolor=[("focus", BORDER), ("!focus", ACCENT)],
                   lightcolor=[("focus", ACCENT),  ("!focus", ACCENT)],
                   darkcolor=[("focus",  ACCENT),  ("!focus", ACCENT)])
-        root.option_add("*TCombobox*Listbox.background",       ACCENT)
-        root.option_add("*TCombobox*Listbox.foreground",       TEXT)
-        root.option_add("*TCombobox*Listbox.selectBackground", ACCENT_H)
-        root.option_add("*TCombobox*Listbox.selectForeground", TEXT)
-        root.option_add("*TCombobox*Listbox.font",             "Segoe\\ UI 9")
-        root.option_add("*TCombobox*Listbox.relief",           "flat")
+        self._root.option_add("*TCombobox*Listbox.background",       ACCENT)
+        self._root.option_add("*TCombobox*Listbox.foreground",       TEXT)
+        self._root.option_add("*TCombobox*Listbox.selectBackground", ACCENT_H)
+        self._root.option_add("*TCombobox*Listbox.selectForeground", TEXT)
+        self._root.option_add("*TCombobox*Listbox.font",             "Segoe\\ UI 9")
+        self._root.option_add("*TCombobox*Listbox.relief",           "flat")
+
+    # ── Run ───────────────────────────────────────────────────────────────────
+    def run(self) -> None:
+        # Apply the colour theme before any widgets are created
+        effective = _effective_theme(self.settings.get("theme", "system"))
+        apply_theme(effective)
+
+        root = tk.Tk()
+        self._root = root
+        root.withdraw()
+        root.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        self._configure_ttk_style()
 
         try:
             dpi = ctypes.windll.user32.GetDpiForSystem()
