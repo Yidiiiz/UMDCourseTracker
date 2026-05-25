@@ -1,140 +1,75 @@
-# UMD Testudo Course Seat Tracker
+# UMD Course Tracker
 
-A Windows system-tray app that watches UMD course seat availability and fires a toast notification the moment a seat opens.
+A lightweight Windows tray app that watches UMD Testudo for open seats and fires a toast notification the moment one appears.
+
+<p align="center">
+  <a href="https://github.com/Yidiiiz/Course-Tracker/releases/latest/download/CourseTracker.exe">
+    <img src="https://img.shields.io/badge/Download-CourseTracker.exe-brightgreen?style=for-the-badge&logo=windows" alt="Download"/>
+  </a>
+</p>
 
 ---
 
-## Features
+## Installation
 
-| Feature | Detail |
+1. Download **CourseTracker.exe** above
+2. Run it — no installation needed
+3. A tray icon appears in the bottom-right corner of your taskbar
+
+Data files (`courses.json`, `settings.json`) are stored in `%APPDATA%\UMD Course Tracker\` and never written next to the exe.
+
+---
+
+## Usage
+
+**Left-click** the tray icon to open the panel.
+
+- **Add a course** — enter the course ID (e.g. `CMSC351`), an optional section number, pick the semester, and click **+ Add Course**
+- **Remove a course** — hover a card and click the **×** that appears
+- **Open Testudo** — click anywhere on a course card to open the search page in your browser
+- **Tray icon colour** — 🟢 green = seats open · 🔴 red = all full · 🟡 yellow = checking / error
+
+### Advanced settings
+
+Expand the **Advanced** section at the bottom of the panel:
+
+| Setting | Default |
 |---|---|
-| 🟢 Tray icon | Green = seats open · Red = all full · Yellow = checking / error |
-| 🔔 Notifications | Windows toast when a section flips closed → open |
-| ⚙ Configurable | Poll interval, notify-on-close toggle, live course list |
-| 🖱 Right-click menu | Per-course status, pause/resume, check now, settings, quit |
-| 📦 Single .exe | PyInstaller bundles everything — no Python needed on target machine |
+| Poll interval | 60 s (min 30 s) |
+| Notify when a section closes | Off |
+| Open on Windows startup | On |
+| Theme | System (follows Windows dark/light mode) |
 
 ---
 
-## Quick Start
+## Requirements
 
-### 1 — Install dependencies
+- Windows 10 or 11
+- A UMD student account is **not** required — Testudo's seat data is public
 
-```bat
-setup.bat
-```
+---
 
-### 2 — Edit `courses.json`
+## Term codes
 
-Open `courses.json` and replace the example entries with the courses you want to track.
-
-```json
-[
-  {
-    "courseId": "CMSC351",
-    "termId": "202608",
-    "sectionId": "",
-    "label": "Algorithms"
-  },
-  {
-    "courseId": "CMSC131",
-    "termId": "202608",
-    "sectionId": "0101",
-    "label": "OOP I §0101"
-  }
-]
-```
-
-| Field | Meaning |
+| Code | Semester |
 |---|---|
-| `courseId` | Course code exactly as on Testudo (e.g. `CMSC351`) |
-| `termId` | Term code: `202501` = Spring 2025, `202508` = Summer 2025, `202601` = Spring 2026, `202608` = Summer 2026, etc. |
-| `sectionId` | Leave `""` to track **all** sections, or enter a specific section like `"0101"` |
-| `label` | Optional friendly name shown in the tray menu |
+| `202501` | Spring 2025 |
+| `202508` | Summer 2025 |
+| `202512` | Winter 2026 |
+| `202601` | Spring 2026 |
+| `202608` | Fall 2026 |
 
-### 3 — Run
+The app picks the most likely upcoming semester by default.
+
+---
+
+## Building from source
 
 ```bat
-python tracker.py
+git clone https://github.com/Yidiiiz/Course-Tracker.git
+cd "Course Tracker"
+setup.bat      # install dependencies
+build.bat      # produces dist\CourseTracker.exe
 ```
 
-An icon appears in the system tray (bottom-right corner). Right-click for the full menu.
-
----
-
-## Build a standalone .exe
-
-```bat
-build.bat
-```
-
-Output: `dist\CourseTracker.exe`
-
-Copy it anywhere. On first launch it will create `courses.json` next to the `.exe` and open Notepad so you can fill it in.
-
----
-
-## Settings (right-click → ⚙ Settings)
-
-| Setting | Default | Notes |
-|---|---|---|
-| Poll interval | 60 s | Minimum 30 s (Testudo rate-limit protection) |
-| Notify on close | Off | Also notify when a seat disappears |
-| Edit courses.json | — | Opens in Notepad; use *Reload* after saving |
-| Reload courses.json | — | Re-reads the file and restarts polling without restarting the app |
-
-Settings are stored in `settings.json` next to the script / exe.
-
----
-
-## How it works
-
-1. **Polling** — every N seconds the app hits Testudo's lightweight sections endpoint:
-   ```
-   https://app.testudo.umd.edu/soc/{termId}/sections?courseIds={courseId}
-   ```
-2. **Parsing** — BeautifulSoup looks for `div.section` elements, reads `.open-seats-count`, and checks whether the div carries the `open` CSS class.
-3. **State diff** — previous open/closed state is remembered; a closed→open transition fires a toast.
-4. **Browser link** — clicking a course in the menu (or clicking the notification) opens the full Testudo search URL with all filters set to "show everything".
-
----
-
-## Finding your `termId`
-
-Visit `https://app.testudo.umd.edu/soc/` and look at the term selector. The value in the URL after you pick a term is your `termId`.
-
-Common codes:
-- `202501` — Spring 2025
-- `202505` — Winter 2025 (if offered)
-- `202508` — Summer 2025
-- `202601` — Spring 2026
-- `202608` — Summer 2026
-
----
-
-## Files
-
-```
-Course Tracker/
-├── tracker.py        ← main application
-├── courses.json      ← your course list (edit this!)
-├── settings.json     ← auto-created on first settings change
-├── icon.ico          ← auto-generated on first run / build
-├── tracker.log       ← rolling log
-├── requirements.txt  ← pip dependencies
-├── setup.bat         ← installs dependencies
-└── build.bat         ← creates dist\CourseTracker.exe
-```
-
----
-
-## Dependencies
-
-```
-requests        HTTP client
-beautifulsoup4  HTML parsing
-pystray         Windows system tray
-Pillow          Icon image generation
-plyer           Cross-platform toast notifications
-pyinstaller     .exe packaging
-```
+**Dependencies:** `requests`, `beautifulsoup4`, `pystray`, `Pillow`, `plyer`, `pyinstaller`
