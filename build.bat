@@ -11,6 +11,9 @@ if errorlevel 1 (
     goto :done
 )
 
+REM Kill any running instance so the exe isn't locked during build
+taskkill /f /im UMDCourseTracker.exe >nul 2>&1
+
 REM Generate icon.ico if it doesn't already exist
 if not exist icon.ico (
     echo Generating icon.ico...
