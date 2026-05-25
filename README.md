@@ -6,12 +6,12 @@ A Windows taskbar tray indicator that monitors UMD Testudo seat availability<br/
 
 <br/>
 
-<img src="assets/image.png" width="300"/>
+<img src="UMDCourseTracker/assets/image.png" width="300"/>
 
 <br/><br/>
 
 <a href="https://github.com/Yidiiiz/UMD-Course-Tracker/releases/latest/download/UMDCourseTracker.exe">
-  <img src="assets/download.svg" alt="Download for Windows"/>
+  <img src="UMDCourseTracker/assets/download.svg" alt="Download for Windows"/>
 </a>
 
 <sub>Windows 10 & 11 &nbsp;·&nbsp; No installation required &nbsp;·&nbsp; No Python needed</sub>
@@ -92,7 +92,7 @@ The app selects the next upcoming semester automatically. You can override it wh
 
 ```bat
 git clone https://github.com/Yidiiiz/UMD-Course-Tracker.git
-cd UMD-Course-Tracker
+cd "UMD-Course-Tracker\UMDCourseTracker"
 setup.bat              :: install dependencies
 build.bat              :: produces dist\UMDCourseTracker.exe
 python tracker.py      :: run from source
