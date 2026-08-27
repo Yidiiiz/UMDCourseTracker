@@ -2,11 +2,12 @@
 
 # UMD Course Tracker
 
-A Windows taskbar tray indicator that monitors UMD Testudo seat availability<br/>and alerts you the moment a seat opens.
+A lightweight Windows tray app that monitors UMD Testudo seat availability<br/>
+and alerts you the moment a seat opens.
 
 <br/>
 
-<img src="UMDCourseTracker/assets/image.png" width="300"/>
+<img src="UMDCourseTracker/assets/image.png" width="300" alt="UMD Course Tracker panel"/>
 
 <br/><br/>
 
@@ -14,7 +15,7 @@ A Windows taskbar tray indicator that monitors UMD Testudo seat availability<br/
   <img src="UMDCourseTracker/assets/download.svg" alt="Download for Windows"/>
 </a>
 
-<sub>Windows 10 & 11 &nbsp;·&nbsp; No installation required &nbsp;·&nbsp; No Python needed</sub>
+<sub>Windows 10 &amp; 11 &nbsp;·&nbsp; No installation required &nbsp;·&nbsp; No Python needed</sub>
 
 <img src="UMDCourseTracker/assets/pin-warning.svg" alt="Pin the tray icon to your taskbar"/>
 
@@ -24,70 +25,87 @@ A Windows taskbar tray indicator that monitors UMD Testudo seat availability<br/
 
 ---
 
-**What it is**
+## Overview
 
-UMD Course Tracker sits in your taskbar as a small colored dot — green when seats are open, red when full. It is designed to be a persistent at-a-glance indicator, not just a background process.
+UMD Course Tracker lives in your taskbar as a single colored dot — green when seats are
+open, red when every tracked section is full. It is built to be a persistent, at-a-glance
+indicator rather than a background process you forget about.
 
----
+- **Tray-first design** — status is visible without opening anything
+- **Desktop notifications** the moment a section opens (or closes, if enabled)
+- **Multiple courses and sections**, tracked across any term
+- **Automatic light / dark theme**, following Windows
+- **Self-contained** — a single `.exe`, no Python or installer required
 
-**Download and run**
+## Installation
 
-Download `UMDCourseTracker.exe` above and double-click it.
+Download `UMDCourseTracker.exe` from the link above and double-click it. The app starts
+in the system tray; no installer runs and nothing is written next to the executable.
 
-> Windows may show a **"Windows protected your PC"** SmartScreen prompt because the app is not code-signed (certificates cost ~$200/year). Click **More info → Run anyway**. The source code is fully open in this repository.
+> [!NOTE]
+> Windows may show a **"Windows protected your PC"** SmartScreen prompt because the app is
+> not code-signed (a certificate costs roughly $200/year). Choose **More info → Run anyway**.
+> The complete source is available in this repository.
 
----
+## Usage
 
-**Add a course**
-
-Left-click the tray icon → enter a course ID (e.g. `CMSC351`) → pick a semester → **+ Add Course**
+Left-click the tray icon to open the panel, enter a course ID such as `CMSC351`, pick a
+semester, then click **+ Add Course**. The section field is optional — leave it blank to
+track every section of the course.
 
 | Action | How |
 |:---|:---|
-| Open panel | Left-click the tray icon |
+| Open the panel | Left-click the tray icon |
+| Add a course | Enter a course ID → choose a semester → **+ Add Course** |
 | Remove a course | Hover a card → click **×** |
 | Open on Testudo | Click anywhere on a course card |
-| Tray icon | 🟢 Seats open · 🔴 Full · 🟡 Checking |
 
----
+| Tray icon | Meaning |
+|:---|:---|
+| 🟢 Green | Seats open |
+| 🔴 Red | All tracked sections full |
+| 🟡 Yellow | Checking |
 
-**Settings**
+## Settings
 
 Expand **Advanced** at the bottom of the panel.
 
-| Setting | Default |
-|:---|:---|
-| Poll interval | 60 s (min 30 s) |
-| Notify when a section closes | Off |
-| Open on Windows startup | On |
-| Theme | Follows system dark / light mode |
+| Setting | Default | Notes |
+|:---|:---|:---|
+| Poll interval | `60 s` | Minimum 30 s |
+| Notify when a section closes | Off | Open-seat alerts are always on |
+| Open on Windows startup | On | Managed via the current-user registry |
+| Theme | System | Follows Windows light / dark mode |
 
-Data is stored in `%APPDATA%\UMD Course Tracker\` — never next to the `.exe`.
+Courses and settings are stored in `%APPDATA%\UMD Course Tracker\` — never alongside the
+executable — so the app can be moved or updated freely.
 
----
+## Term Codes
 
-**Term Codes**
-
-The app selects the next upcoming semester automatically. You can override it when adding a course.
+The app selects the next upcoming semester automatically; you can override it when adding
+a course. Term codes are shown here for reference.
 
 | Code | Semester |
 |:---|:---|
-| `202501` | Spring 2025 |
-| `202508` | Summer 2025 |
-| `202512` | Winter 2026 |
 | `202601` | Spring 2026 |
+| `202605` | Summer 2026 |
 | `202608` | Fall 2026 |
+| `202612` | Winter 2027 |
 
----
+A term code is the calendar year followed by the season month (`01` Spring, `05` Summer,
+`08` Fall, `12` Winter). Winter terms begin in December of the preceding year.
 
-**Build from Source**
+## Build from Source
+
+Requires Python 3.9+ on Windows.
 
 ```bat
 git clone https://github.com/Yidiiiz/UMD-Course-Tracker.git
 cd "UMD-Course-Tracker\UMDCourseTracker"
-setup.bat         :: install dependencies
-build.bat         :: produces dist\UMDCourseTracker.exe
-python tracker.py :: run from source
+
+setup.bat          :: install dependencies
+python tracker.py  :: run from source
+build.bat          :: produce dist\UMDCourseTracker.exe
 ```
 
-`requests` · `beautifulsoup4` · `pystray` · `Pillow` · `plyer` · `pyinstaller`
+**Dependencies:** `requests` · `beautifulsoup4` · `pystray` · `Pillow` · `plyer` · `pyinstaller`
